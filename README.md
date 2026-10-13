@@ -9,3 +9,20 @@ If there is an issue make an issue request i may fix it
 The requirement to play backround audio is so IOS doesnt close my app when in the bacground
 
 Yes i know you cant stop the app without force closing it
+
+GitHub Actions IPA build:
+
+1. Open the Actions tab and run the "Build iOS App" workflow (workflow_dispatch).
+2. Wait for completion and download the "CCMiner-iOS-Build" artifact.
+3. Verify integrity with the included checksum file:
+   - `shasum -a 256 -c CCMiner.ipa.sha256`
+
+GitHub Actions macOS CLI build (Apple Silicon):
+
+1. Open the Actions tab and run the "Build macOS CLI Miner" workflow (workflow_dispatch).
+2. Download the `ccminer-macos-arm64` artifact.
+3. Verify integrity:
+   - `shasum -a 256 -c ccminer-macos-arm64.sha256`
+4. Make executable and run:
+   - `chmod +x ccminer-macos-arm64`
+   - `./ccminer-macos-arm64 --help`

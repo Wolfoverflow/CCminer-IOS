@@ -1,0 +1,74 @@
+name: Build macOS CLI Miner
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-cli:
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          brew install autoconf automake libtool pkg-config curl openssl@3 nghttp2 jansson
+
+      - name: Build ccminer CLI for Apple Silicon
+        working-directory: ccminer
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ccminer.cpp")
+          source = p.read_text()
+          old = "/*int main(int argc,char *argv[])\n{\n\treturn start_(argc,argv);\n}*/"
+          new = "int main(int argc,char *argv[])\n{\n\treturn start_(argc,argv);\n}"
+          if old not in source:
+              raise SystemExit("expected commented main() block not found in ccminer.cpp")
+          p.write_text(source.replace(old, new, 1))
+          PY
+          chmod +x autogen.sh
+          ./autogen.sh
+
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          CURL_PREFIX="$(brew --prefix curl)"
+          JANSSON_PREFIX="$(brew --prefix jansson)"
+          NGHTTP2_PREFIX="$(brew --prefix nghttp2)"
+
+          export PKG_CONFIG_PATH="${OPENSSL_PREFIX}/lib/pkgconfig:${CURL_PREFIX}/lib/pkgconfig:${JANSSON_PREFIX}/lib/pkgconfig:${NGHTTP2_PREFIX}/lib/pkgconfig"
+          export CPPFLAGS="-I${OPENSSL_PREFIX}/include -I${CURL_PREFIX}/include -I${JANSSON_PREFIX}/include -I${NGHTTP2_PREFIX}/include"
+          export LDFLAGS="-L${OPENSSL_PREFIX}/lib -L${CURL_PREFIX}/lib -L${JANSSON_PREFIX}/lib -L${NGHTTP2_PREFIX}/lib"
+
+          ./configure CXXFLAGS="-O3"
+          make -j"$(sysctl -n hw.ncpu)"
+
+      - name: Smoke test CLI
+        working-directory: ccminer
+        run: |
+          set -euxo pipefail
+          ./ccminer --help > ../ccminer-help.txt 2>&1
+          grep -qi "ccminer" ../ccminer-help.txt
+
+      - name: Package macOS CLI artifact
+        run: |
+          set -euxo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          cp ccminer/ccminer artifacts/ccminer-macos-arm64
+          shasum -a 256 artifacts/ccminer-macos-arm64 > artifacts/ccminer-macos-arm64.sha256
+          file artifacts/ccminer-macos-arm64 > artifacts/ccminer-macos-arm64.fileinfo.txt
+          cp ccminer-help.txt artifacts/ccminer-help.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ccminer-macos-arm64
+          path: artifacts/*
